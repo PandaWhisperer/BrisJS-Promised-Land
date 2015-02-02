@@ -1,0 +1,220 @@
+//-
+  This file contains only slides
+  See _layout.jade for the layout and setup code
+
+slide.logoslide.nobackground
+  article.flexbox.vcenter
+    span
+      img(src='images/pandastrike-logo-text.jpg')
+
+slide.title-slide.segue.nobackground.fill
+  aside.gdbar
+    img(src='images/pandastrike-logo-256.png')
+  // The content of this hgroup is replaced programmatically through the slide_config.json.
+  hgroup.auto-fadein
+    h1(data-config-title='')
+      // populated from slide_config.json
+    h2(data-config-subtitle='')
+      // populated from slide_config.json
+    p(data-config-presenter='')
+      // populated from slide_config.json
+
+slide
+  hgroup
+    h2 Promises, promises...
+  article
+    p Promises were supposed to save us from this:
+    pre.prettyprint(data-lang="javascript").
+      service.doAsyncThing1(params, function(err, result) {
+        result.doAsyncThing2(params, function(err, result2) {
+          result2.doAsyncThing3(params, function(err, result3) {
+            console.log("Result: " + result3);
+          });
+        });
+      });
+
+slide
+  h2 The Pyramid of Doom!
+  article.flexbox.vcenter
+    img(src="images/panda_pyramid.jpg")
+
+slide
+  hgroup
+    h2 Promises, promises...
+  article
+    p Instead, we got this:
+    pre.prettyprint(data-lang="javascript").
+      service.doAsyncThing1(params).then(function(result) {
+        result.doAsyncThing2(params).then(function(result2) {
+          result2.doAsyncThing3(params).then(function(result3) {
+            console.log("Result: " + result3);
+          });
+        });
+      });
+
+slide
+  article.flexbox.vcenter
+    img(src="images/panda_facepalm.jpg")
+
+slide
+  hgroup
+    h2 Promises, promises...
+  article
+    p Okay, let's try this again...
+    pre.prettyprint(data-lang="javascript").
+      service.doAsyncThing1(params).then(function(result) {
+        return result.doAsyncThing2(params);
+      }).then(function(result2) {
+        return result2.doAsyncThing3(params);
+      }).then(function(result3) {
+        console.log("Result: " + result3);
+      });
+
+slide
+  hgroup
+    h2 That's better
+  article.flexbox.vcenter
+    img(src="images/pandas_approve.jpg")
+
+slide
+  hgroup
+    h2 Promise me a Rose Garden
+  article
+    :markdown
+      * We can flatten the pyramid by relying on composability of promises
+      * But — as soon as we do something async, we're locked into a promise chain
+      * Asynchronous code still looks *different* from synchronous
+      * Can't use `try`/`catch` for error handling
+
+slide
+  article.flexbox.vcenter
+    img(src="images/panda_chain.jpg")
+
+slide
+  hgroup
+    h2 What if?
+  article
+    :markdown
+      * What if we could write async code that looks the same as sync?
+      * If an async operation fails, throw an error
+      * If it succeeds, continue below
+      * That's not too much to ask, is it?
+
+slide
+  hgroup
+    h2 How can generators help?
+  article
+    :markdown
+      * Remember — what does `yield` do?
+      * Suspends the iterator and returns a value
+      * Iterator can then be resumed “at will”
+      * Important: we can pass in a *value* to substitute for the `yield` statement
+
+slide
+  hgroup
+    h2 A thought experiment
+  article
+    :markdown
+      * Let's start with a generator function
+      * Every time we do something async, we `yield` the promise that results
+
+    pre.prettyprint(data-lang="javascript").
+      var login = function* (username, password, session) {
+        var user = yield getUser(username);
+        var hash = yield crypto.hashAsync(password + user.salt);
+        if (user.hash !== hash) {
+          throw new Error('Incorrect password');
+        }
+        session.setUser(user);
+      };
+
+slide
+  hgroup
+    h2 Now we need a function that...
+  article
+    :markdown
+      * Takes a generator as input
+      * Invokes it with parameters we specify
+      * Continually calls `.next()` until `result.done == true`
+      * If an intermediate result is a promise:
+        * that is fulfilled, call `it.next()` with the fulfilled value
+        * that is rejected, throw an exception
+        * that it is pending, chain in a new handler to call `it.next()` with the fullfilled value
+
+slide
+  hgroup
+    h2 In other words, this...
+  article.smaller
+    pre.prettyprint(data-lang="javascript").
+      function async(generator) {
+        return function () {
+          var iterator = generator.apply(this, arguments);
+
+          function handle(result) {
+            // result => { done: [Boolean], value: [Object] }
+            if (result.done) return Promise.resolve(result.value);
+
+            return Promise.resolve(result.value).then(function (res) {
+              return handle(iterator.next(res));
+            }, function (err) {
+              return handle(iterator.throw(err));
+            });
+          }
+
+          try {
+            return handle(iterator.next());
+          } catch (ex) {
+            return Promise.reject(ex);
+          }
+        }
+      }
+
+slide
+  hgroup
+    h2 ...and now we can do this:
+  article
+    pre.prettyprint(data-lang="javascript").
+      // NOTE: `login` is a function that returns a **Promise**
+
+      var login = async(function* (username, password, session) {
+        var user = yield getUser(username);
+        var hash = yield crypto.hashAsync(password + user.salt);
+        if (user.hash !== hash) {
+          throw new Error('Incorrect password');
+        }
+        session.setUser(user);
+      });
+
+slide
+  hgroup
+    h2 Success!
+  article.flexbox.vcenter
+    img(src="images/panda_tricycle.jpg")
+
+slide
+  hgroup
+    h2 Links
+  article
+    :markdown
+      * General Explanation: [https://www.promisejs.org/generators/](https://www.promisejs.org/generators/)
+      * Standalone implementation: [http://taskjs.org](http://taskjs.org)
+      * Another standalone implementation: [https://github.com/then/yield](https://github.com/then/yield)
+      * [when.js](https://github.com/cujojs/when) has built-in support via [`generator/lift`](https://github.com/cujojs/when/blob/master/docs/api.md#generatorlift)
+      * [Q](https://github.com/kriskowal/q) has built-in support using [`Q.async`](https://github.com/kriskowal/q/tree/v1/examples/async-generators)
+
+slide.thank-you-slide.segue.nobackground
+  aside.gdbar.right
+    img(src='images/pandastrike-logo-256.png')
+  article.flexbox.vleft.auto-fadein
+    h2 &lt;Thank You!&gt;
+    p Important contact information goes here.
+  p.auto-fadein(data-config-contact='')
+    // populated from slide_config.json
+
+slide.logoslide.dark.nobackground
+  article.flexbox.vcenter
+    span
+      img(src='images/pandastrike-wide.png')
+
+slide.backdrop
+

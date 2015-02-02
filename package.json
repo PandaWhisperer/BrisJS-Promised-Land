@@ -1,0 +1,17 @@
+{
+  "name": "PandaSlides",
+  "version": "0.0.2",
+  "description": "Pandariffic HTML slides",
+  "scripts": {
+    "start": "./bin/serve.sh"
+  },
+  "keywords": [
+    "slides"
+  ],
+  "author": "Christoph Wagner <christoph@pandastrike.com>",
+  "license": "APL",
+  "dependencies": {
+    "font-awesome": "^4.2.0",
+    "harp": "^0.14.0"
+  }
+}
