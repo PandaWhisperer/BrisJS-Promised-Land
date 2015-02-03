@@ -1,0 +1,114 @@
+<!DOCTYPE html><!--Panda Slides HTML5 Slide Template
+|
+Based on Google IO 2012/2013 HTML5 Slide Template
+by Eric Bidelman <ebidel@gmail.com>
+   Luke Mahé <lukem@google.com>
+URL: https://code.google.com/p/io-2012-slides--><html><head><title>Panda Slides</title><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="chrome=1"><!-- <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">--><!-- <meta name="viewport" content="width=device-width, initial-scale=1.0">--><!-- This one seems to work all the time, but really small on ipad--><!-- <meta name="viewport" content="initial-scale=0.4">--><meta name="apple-mobile-web-app-capable" content="yes"><link rel="stylesheet" media="all" href="styles/pandastrike.css"><link rel="stylesheet" media="only screen and (max-device-width: 480px)" href="styles/phone.css"><link rel="stylesheet" media="all" href="font-awesome/css/font-awesome.css"><!-- This amazingness opens all links in a new tab.--><base target="_blank"><script data-main="js/slides" src="js/require-1.0.8.min.js"></script></head><body style="opacity: 0"><slides class="layout-widescreen"><slide class="logoslide nobackground"><article class="flexbox vcenter"><span><img src="images/pandastrike-logo-text.jpg"/></span></article></slide><slide class="title-slide segue nobackground fill"><aside class="gdbar"><img src="images/pandastrike-logo-256.png"/></aside><!-- The content of this hgroup is replaced programmatically through the slide_config.json.--><hgroup class="auto-fadein"><h1 data-config-title=""><!-- populated from slide_config.json--></h1><h2 data-config-subtitle=""><!-- populated from slide_config.json--></h2><p data-config-presenter=""><!-- populated from slide_config.json--></p></hgroup></slide><slide><hgroup><h2>Promises, promises...</h2></hgroup><article><p>Promises were supposed to save us from this:</p><pre data-lang="javascript" class="prettyprint">service.doAsyncThing1(params, function(err, result) {
+  result.doAsyncThing2(params, function(err, result2) {
+    result2.doAsyncThing3(params, function(err, result3) {
+      console.log("Result: " + result3);
+    });
+  });
+});
+</pre></article></slide><slide><h2>The Pyramid of Doom!</h2><article class="flexbox vcenter"><img src="images/panda_pyramid.jpg"/></article></slide><slide><hgroup><h2>Promises, promises...</h2></hgroup><article><p>Instead, we got this:</p><pre data-lang="javascript" class="prettyprint">service.doAsyncThing1(params).then(function(result) {
+  result.doAsyncThing2(params).then(function(result2) {
+    result2.doAsyncThing3(params).then(function(result3) {
+      console.log("Result: " + result3);
+    });
+  });
+});
+</pre></article></slide><slide><article class="flexbox vcenter"><img src="images/panda_facepalm.jpg"/></article></slide><slide><hgroup><h2>Promises, promises...</h2></hgroup><article><p>Okay, let's try this again...</p><pre data-lang="javascript" class="prettyprint">service.doAsyncThing1(params).then(function(result) {
+  return result.doAsyncThing2(params);
+}).then(function(result2) {
+  return result2.doAsyncThing3(params);
+}).then(function(result3) {
+  console.log("Result: " + result3);
+});
+</pre></article></slide><slide><hgroup><h2>That's better</h2></hgroup><article class="flexbox vcenter"><img src="images/pandas_approve.jpg"/></article></slide><slide><hgroup><h2>Promise me a Rose Garden</h2></hgroup><article><ul>
+<li>We can flatten the pyramid by relying on composability of promises</li>
+<li>But — as soon as we do something async, we&#39;re locked into a promise chain</li>
+<li>Asynchronous code still looks <em>different</em> from synchronous</li>
+<li>Can&#39;t use <code>try</code>/<code>catch</code> for error handling</li>
+</ul>
+</article></slide><slide><article class="flexbox vcenter"><img src="images/panda_chain.jpg"/></article></slide><slide><hgroup><h2>What if?</h2></hgroup><article><ul>
+<li>What if we could write async code that looks the same as sync?</li>
+<li>If an async operation fails, throw an error</li>
+<li>If it succeeds, continue below</li>
+<li>That&#39;s not too much to ask, is it?</li>
+</ul>
+</article></slide><slide><hgroup><h2>How can generators help?</h2></hgroup><article><ul>
+<li>Remember — what does <code>yield</code> do?</li>
+<li>Suspends the iterator and returns a value</li>
+<li>Iterator can then be resumed “at will”</li>
+<li>Important: we can pass in a <em>value</em> to substitute for the <code>yield</code> statement</li>
+</ul>
+</article></slide><slide><hgroup><h2>A thought experiment</h2></hgroup><article><ul>
+<li>Let&#39;s start with a generator function</li>
+<li>Every time we do something async, we <code>yield</code> the promise that results</li>
+</ul>
+<pre data-lang="javascript" class="prettyprint">var login = function* (username, password, session) {
+  var user = yield getUser(username);
+  var hash = yield crypto.hashAsync(password + user.salt);
+  if (user.hash !== hash) {
+    throw new Error('Incorrect password');
+  }
+  session.setUser(user);
+};
+</pre></article></slide><slide><hgroup><h2>Now we need a function that...</h2></hgroup><article><ul>
+<li>Takes a generator as input</li>
+<li>Invokes it with parameters we specify</li>
+<li>Continually calls <code>.next()</code> until <code>result.done == true</code></li>
+<li>If an intermediate result is a promise:<ul>
+<li>that is fulfilled, call <code>it.next()</code> with the fulfilled value</li>
+<li>that is rejected, throw an exception</li>
+<li>that it is pending, chain in a new handler to call <code>it.next()</code> with the fullfilled value</li>
+</ul>
+</li>
+</ul>
+</article></slide><slide><hgroup><h2>In other words, this...</h2></hgroup><article class="smaller"><pre data-lang="javascript" class="prettyprint">function async(generator) {
+  return function () {
+    var iterator = generator.apply(this, arguments);
+    
+    function handle(result) {
+      // result => { done: [Boolean], value: [Object] }
+      if (result.done) return Promise.resolve(result.value);
+      
+      return Promise.resolve(result.value).then(function (res) {
+        return handle(iterator.next(res));
+      }, function (err) {
+        return handle(iterator.throw(err));
+      });
+    }
+    
+    try {
+      return handle(iterator.next());
+    } catch (ex) {
+      return Promise.reject(ex);
+    }
+  }
+}
+</pre></article></slide><slide><hgroup><h2>...and now we can do this:</h2></hgroup><article><pre data-lang="javascript" class="prettyprint">// NOTE: `login` is a function that returns a **Promise**
+
+var login = async(function* (username, password, session) {
+  var user = yield getUser(username);
+  var hash = yield crypto.hashAsync(password + user.salt);
+  if (user.hash !== hash) {
+    throw new Error('Incorrect password');
+  }
+  session.setUser(user);
+});
+</pre></article></slide><slide><hgroup><h2>Success!</h2></hgroup><article class="flexbox vcenter"><img src="images/panda_tricycle.jpg"/></article></slide><slide><hgroup><h2>Links</h2></hgroup><article><ul>
+<li>General Explanation: <a href="https://www.promisejs.org/generators/"><a href="https://www.promisejs.org/generators/">https://www.promisejs.org/generators/</a></a></li>
+<li>Standalone implementation: <a href="http://taskjs.org"><a href="http://taskjs.org">http://taskjs.org</a></a></li>
+<li>Another standalone implementation: <a href="https://github.com/then/yield"><a href="https://github.com/then/yield">https://github.com/then/yield</a></a></li>
+<li><a href="https://github.com/cujojs/when">when.js</a> has built-in support via <a href="https://github.com/cujojs/when/blob/master/docs/api.md#generatorlift"><code>generator/lift</code></a></li>
+<li><a href="https://github.com/kriskowal/q">Q</a> has built-in support using <a href="https://github.com/kriskowal/q/tree/v1/examples/async-generators"><code>Q.async</code></a></li>
+</ul>
+</article></slide><slide class="thank-you-slide segue nobackground"><aside class="gdbar right"><img src="images/pandastrike-logo-256.png"/></aside><article class="flexbox vleft auto-fadein"><h2>&lt;Thank You!&gt;</h2><p>Important contact information goes here.</p></article><p data-config-contact="" class="auto-fadein"><!-- populated from slide_config.json--></p></slide><slide class="logoslide dark nobackground"><article class="flexbox vcenter"><span><img src="images/pandastrike-wide.png"/></span></article></slide><slide class="backdrop"></slide></slides><script>var _gaq = _gaq || [];
+_gaq.push(['_setAccount', 'UA-XXXXXXXX-1']);
+_gaq.push(['_trackPageview']);
+(function() {
+var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+})();</script><!--[if IE]><script src="http://ajax.googleapis.com/ajax/libs/chrome-frame/1/CFInstall.min.js"></script><script>CFInstall.check({mode: 'overlay'});</script><![endif]--></body></html>
